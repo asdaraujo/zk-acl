@@ -4,7 +4,6 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
-import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.KeeperException;
@@ -17,50 +16,73 @@ import java.util.List;
 import java.util.Properties;
 
 public class ZkAcl implements Watcher {
+    private static final String ADDAUTH_DIGEST_CONFIG = "addauth.digest";
+    private static final int FIRST_ACL_POS = 3;
+
     public static void main(String[] args) throws IOException, KeeperException, InterruptedException {
-        ZooKeeper zk = null;
         if (args.length < 3) {
-            System.err.println(String.format("Syntax: %s <properties_file> <zk_host>:<zk_port> <znode> [<acl> ...]",
-                    ZkAcl.class.getName()));
+            System.err.printf("Syntax: %s <properties_file> <zk_host>:<zk_port> <znode> [<acl> ...]\n",
+                    ZkAcl.class.getName());
             System.exit(1);
         }
         String propsFile = args[0];
         String hostPort = args[1];
         String znode = args[2];
+        List<ACL> acls = parseAcls(args);
+
+        Properties props = loadProperties(propsFile);
+        processAcls(hostPort, znode, props.getProperty(ADDAUTH_DIGEST_CONFIG, null), acls);
+    }
+
+    private static Properties loadProperties(String propsFile) throws IOException {
         try (InputStream input = new FileInputStream(propsFile)) {
             Properties props = new Properties();
             props.load(input);
-            System.setProperties(props);
+            for(String prop : props.stringPropertyNames()) {
+                System.setProperty(prop, (String) props.get(prop));
+            }
+            return props;
         }
+    }
+
+    private static void processAcls(String hostPort, String znode, String addAuthDigest, List<ACL> acls)
+            throws KeeperException, InterruptedException, IOException {
+        ZooKeeper zk = null;
         try {
             Watcher watcher = new ZkAcl();
             zk = new ZooKeeper(hostPort, 3000, watcher);
-            zk.addAuthInfo("digest", "super:cloudera".getBytes());
-            Stat s = zk.exists(znode, watcher);
-            if (s == null) {
+
+            if (addAuthDigest != null) {
+                zk.addAuthInfo("digest", addAuthDigest.getBytes());
+            }
+
+            if (zk.exists(znode, watcher) == null) {
                 System.out.println("ZNode doesn't exist");
             } else {
-                List<ACL> acls = null;
-                if (args.length > 1) {
-                    acls = new ArrayList<ACL>();
-                    for(int i = 1; i < args.length; i++) {
-                        String[] tokens = args[i].split(":");
-                        acls.add(new ACL(stringToPerms(tokens[2]), new Id(tokens[0], tokens[1])));
-                    }
-                    printACLs(acls);
+                if (acls.size() > 0) {
+                    System.out.println("Setting ACLs:");
                     zk.setACL(znode, acls, -1);
+                } else {
+                    System.out.println("Retrieving ACLs:");
+                    acls = zk.getACL(znode, null);
                 }
-                acls = zk.getACL(znode, null);
                 printACLs(acls);
             }
-        } catch (Exception e) {
-            System.out.println("EXC");
-            System.out.println(e.toString());
-            throw e;
         } finally {
             if (zk != null)
                 zk.close();
         }
+    }
+
+    private static List<ACL> parseAcls(String[] args) {
+        List<ACL> acls = new ArrayList<ACL>();
+        for(int i = FIRST_ACL_POS; i < args.length; i++) {
+            String[] tokens = args[i].split(":");
+            if (tokens.length != 3)
+                throw new RuntimeException(String.format("Invalid ACL. Expected format: scheme:id:perms. Found: %s", args[i]));
+            acls.add(new ACL(stringToPerms(tokens[2]), new Id(tokens[0], tokens[1])));
+        }
+        return acls;
     }
 
     public static void printACLs(List<ACL> acls) {
@@ -71,7 +93,7 @@ public class ZkAcl implements Watcher {
 
     public static void printACL(ACL acl) {
         String perms = permsToString(acl.getPerms());
-        System.out.println(String.format("Scheme: %s, Id: %s, Perms: %s", acl.getId().getScheme(), acl.getId().getId(), perms));
+        System.out.printf("Scheme: %s, Id: %s, Perms: %s\n", acl.getId().getScheme(), acl.getId().getId(), perms);
     }
 
     public static String permsToString(int perms) {

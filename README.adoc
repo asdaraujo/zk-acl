@@ -2,16 +2,199 @@
 
 This is a simple tool to check and set ZooKeeper ACLs. The motivation to write this was to allow the setting of `x509` ACLs where the user id can contain commas. Unfortunately, the `zookeeper-client` CLI parses the commas as ACL separators, and I couldn't find ways to escape it.
 
-== Build
+== Building
 
 [source,shell]
 ----
 mvn clean package
 ----
 
-== Run
+== Running
+
+This tool has two different command line syntaxes:
+
+=== Retrieving ACL for a ZNode
+
+Using this syntax `ZkAcl` will only retrieve and display the ACL for the specified ZNode:
 
 [source,shell]
 ----
-mvn clean package
+com.cloudera.ZkAcl <config_file> <zk_host>:<port> <znode>
 ----
+
+The example below uses Maven to execute the tool to retrieve the ACL(s) for ZNode `/data`:
+
+[source,shell]
+----
+mvn exec:java \
+  -Dexec.mainClass=com.cloudera.ZkAcl \
+  -Dexec.args="\
+     ./config/client.properties \
+     zk1.acme.com:2182 \
+     /data"
+----
+
+Output:
+[source]
+----
+Retrieving ACLs:
+Scheme: x509, Id: CN=bob,O=ACME.COM, Perms: cdrwa
+----
+
+=== Setting ACL for a ZNode
+
+This syntax will tell `ZkAcl` to set the specified ACL(s) on the specified ZNode. One or more ACLs can be applied to the same ZNode at once:
+
+[source,shell]
+----
+com.cloudera.ZkAcl <config_file> <zk_host>:<port> <znode> <acl> [<acl> ...]
+----
+
+The ACL syntax has the form: `<scheme>:<id>:<permissions>`. For more details on ZooKeeper ACLs, please read the link:https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl[ZooKeeper documentation].
+
+Here are some examples of ACLs for different common schemes:
+
+[%autowidth,cols="1,1a",options="header"]
+|====
+|ACL
+|Description
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+world:anyone:r
+----
+|Read permission to everyone
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+sasl:alice:cdrwa
+----
+|Full permissions(Create, Delete, Read, Write and Admin) for the SASL-authenticated user `alice`
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+x509:CN=bob,O=ACME.COM:rw
+----
+|Read and Write permissions for the SSL-authenticated user with a certificate having the subject `CN=bob,O=ACME.COM`
+
+|====
+
+
+The example below uses Maven to execute the tool and apply two ACLs to the ZNode `/data`:
+
+[source,shell]
+----
+mvn exec:java \
+  -Dexec.mainClass=com.cloudera.ZkAcl \
+  -Dexec.args="\
+     ./config/client.properties \
+     zk1.acme.com:2182 \
+     /data \
+     world:anyone:r \
+     sasl:alice:cdrwa"
+----
+
+== Configuration
+
+[%autowidth,cols="1,1a",options="header"]
+|====
+|Argument
+|Description
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+zookeeper.tracelog.dir
+----
+|
+Directory where the `ZkAcl` trace log file will be saved
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+zookeeper.tracelog.file
+----
+|
+Name of the `ZkAcl` trace log file
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+zookeeper.ssl.keyStore.location
+----
+|
+Path of the client JKS keystore. Only needed when using TLS Client Authentication
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+zookeeper.ssl.keyStore.password
+----
+|
+Password for the client JKS keystore. Only needed when using TLS Client Authentication
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+zookeeper.ssl.trustStore.location
+----
+|
+Path of the JKS truststore. Only needed when connecting to ZK over TLS
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+zookeeper.ssl.trustStore.password
+----
+|
+Password of the JKS truststore. Only needed when connecting to ZK over TLS
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+zookeeper.client.secure
+----
+|
+Indicates whether the client is connecting to the ZooKeeper insecure `clientPort` or to its `secureClientPort`. Valid values are `true` and `false`
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+zookeeper.clientCnxnSocket
+----
+|
+Set to `org.apache.zookeeper.ClientCnxnSocketNetty` to ensure the client is using Netty for communications
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+javax.net.debug
+----
+|
+Add this property if you want to link:https://docs.oracle.com/javase/8/docs/technotes/guides/security/jsse/ReadDebug.html[debug SSL/TLS connections]. Please see the link:https://docs.oracle.com/javase/8/docs/technotes/guides/security/jsse/JSSERefGuide.html#Debug[JSSE documentation] for valid values.
+
+// ===== ===== ===== ===== ===== ===== ===== ===== =====
+a|
+[source%nowrap,shell]
+----
+addauth.digest
+----
+|
+If you are connecting to ZooKeeper using SASL or X509 and your authenticated principal is already a super user by means of the `X509AuthenticationProvider.superUser` or `zookeeper.superUser` settings, leave this property commented out. Otherwise, you can configure super user digest credentials in ZooKeeper using the `DigestAuthenticationProvider.superDigest` and specify the credentials in this property using the syntax `<username>:<password>`
+
+|====
