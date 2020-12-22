@@ -1,0 +1,17 @@
+= ZooKeeper ACL tool
+
+This is a simple tool to check and set ZooKeeper ACLs. The motivation to write this was to allow the setting of `x509` ACLs where the user id can contain commas. Unfortunately, the `zookeeper-client` CLI parses the commas as ACL separators, and I couldn't find ways to escape it.
+
+== Build
+
+[source,shell]
+----
+mvn clean package
+----
+
+== Run
+
+[source,shell]
+----
+mvn clean package
+----
