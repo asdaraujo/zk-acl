@@ -12,6 +12,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 
@@ -28,7 +29,7 @@ public class ZkAcl implements Watcher {
         String propsFile = args[0];
         String hostPort = args[1];
         String znode = args[2];
-        List<ACL> acls = parseAcls(args);
+        List<ACL> acls = parseAcls(Arrays.copyOfRange(args, FIRST_ACL_POS, args.length));
 
         Properties props = loadProperties(propsFile);
         processAcls(hostPort, znode, props.getProperty(ADDAUTH_DIGEST_CONFIG, null), acls);
@@ -74,13 +75,17 @@ public class ZkAcl implements Watcher {
         }
     }
 
-    private static List<ACL> parseAcls(String[] args) {
+    public static List<ACL> parseAcls(String[] args) {
         List<ACL> acls = new ArrayList<ACL>();
-        for(int i = FIRST_ACL_POS; i < args.length; i++) {
-            String[] tokens = args[i].split(":");
-            if (tokens.length != 3)
+        for(int i = 0; i < args.length; i++) {
+            int firstSep = args[i].indexOf(":");
+            int lastSep = args[i].lastIndexOf(":");
+            if (firstSep == -1 || lastSep == -1 || firstSep == lastSep)
                 throw new RuntimeException(String.format("Invalid ACL. Expected format: scheme:id:perms. Found: %s", args[i]));
-            acls.add(new ACL(stringToPerms(tokens[2]), new Id(tokens[0], tokens[1])));
+            String scheme = args[i].substring(0, firstSep);
+            String principal = args[i].substring(firstSep+1, lastSep);
+            String permsStr = args[i].substring(lastSep+1);
+            acls.add(new ACL(stringToPerms(permsStr), new Id(scheme, principal)));
         }
         return acls;
     }
