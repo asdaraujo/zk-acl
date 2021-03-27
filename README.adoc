@@ -11,44 +11,56 @@ mvn clean package
 
 == Running
 
-This tool has two different command line syntaxes:
+The full syntax for using `ZkAcl` is shown below.
 
-=== Retrieving ACL for a ZNode
+The behaviour of the tool on whether ACLs are specified on not on the command line:
 
-Using this syntax `ZkAcl` will only retrieve and display the ACL for the specified ZNode:
+* If no ACLs are specified, `ZkAcl` will retrieve the ACLs for the specified ZNode
+* If ACLs are specified it will set the ACLs for the specified ZNode.
 
 [source,shell]
 ----
-com.cloudera.ZkAcl <config_file> <zk_host>:<port> <znode>
+Usage: com.cloudera.ZkAcl [OPTIONS] [<acl> ...]
+Sets or retrieves ACLs for ZNodes in ZooKeeper.
+
+ -c,--config <arg>      Path of the properties file.
+ -n,--znode <arg>       Znode path.
+ -r,--recursive         Executes the command recursively through the znode
+                        tree.
+ -v,--verbose           Lists znodes during a set operation.
+ -z,--zookeeper <arg>   ZooKeeper address (host:port).
 ----
 
-The example below uses Maven to execute the tool to retrieve the ACL(s) for ZNode `/data`:
+=== Retrieving ACL for a ZNode
+
+Without specifying ACLs `ZkAcl` will only retrieve and display the ACLs for the specified ZNode.
+
+The example below uses Maven to execute `ZkAcl` to retrieve the ACL(s) for ZNode `/data`:
 
 [source,shell]
 ----
 mvn exec:java \
   -Dexec.mainClass=com.cloudera.ZkAcl \
   -Dexec.args="\
-     ./config/client.properties \
-     zk1.acme.com:2182 \
-     /data"
+     --zookeeper zk1.acme.com:2182 \
+     --config ./client.properties \
+     --znode /data"
 ----
 
 Output:
 [source]
 ----
-Retrieving ACLs:
-Scheme: x509, Id: CN=bob,O=ACME.COM, Perms: cdrwa
+Retrieving ACLs...
+/kafka
+  Scheme: world, Id: anyone, Perms: r
+  Scheme: x509, Id: CN=bob,O=ACME.COM, Perms: cdrwa
 ----
+
+To list ACLs recursively, add the `--recursive` option.
 
 === Setting ACL for a ZNode
 
-This syntax will tell `ZkAcl` to set the specified ACL(s) on the specified ZNode. One or more ACLs can be applied to the same ZNode at once:
-
-[source,shell]
-----
-com.cloudera.ZkAcl <config_file> <zk_host>:<port> <znode> <acl> [<acl> ...]
-----
+If ACLs are specified `ZkAcl` will set ACLs for the specified ZNode. One or more ACLs can be applied to the same ZNode at once:
 
 The ACL syntax has the form: `<scheme>:<id>:<permissions>`. For more details on ZooKeeper ACLs, please read the link:https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl[ZooKeeper documentation].
 
@@ -85,7 +97,6 @@ x509:CN=bob,O=ACME.COM:rw
 
 |====
 
-
 The example below uses Maven to execute the tool and apply two ACLs to the ZNode `/data`:
 
 [source,shell]
@@ -93,12 +104,15 @@ The example below uses Maven to execute the tool and apply two ACLs to the ZNode
 mvn exec:java \
   -Dexec.mainClass=com.cloudera.ZkAcl \
   -Dexec.args="\
-     ./config/client.properties \
-     zk1.acme.com:2182 \
-     /data \
+     --zookeeper zk1.acme.com:2182 \
+     --config ./client.properties \
+     --znode /data"
      world:anyone:r \
      sasl:alice:cdrwa"
 ----
+
+To set ACLs recursively, add the `--recursive` option to the command above.
+When setting ACLs `ZkAcl` doesn't list the ZNodes unless the option `--verbose` is specified.
 
 == Configuration
 

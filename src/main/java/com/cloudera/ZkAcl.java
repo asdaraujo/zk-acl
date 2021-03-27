@@ -1,5 +1,6 @@
 package com.cloudera;
 
+import org.apache.commons.cli.*;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs;
@@ -18,21 +19,52 @@ import java.util.Properties;
 
 public class ZkAcl implements Watcher {
     private static final String ADDAUTH_DIGEST_CONFIG = "addauth.digest";
-    private static final int FIRST_ACL_POS = 3;
 
     public static void main(String[] args) throws IOException, KeeperException, InterruptedException {
-        if (args.length < 3) {
-            System.err.printf("Syntax: %s <properties_file> <zk_host>:<zk_port> <znode> [<acl> ...]\n",
-                    ZkAcl.class.getName());
+        Options options = new Options();
+
+        Option zkOption = new Option("z", "zookeeper", true, "ZooKeeper address (host:port).");
+        zkOption.setRequired(true);
+        options.addOption(zkOption);
+        Option configOption = new Option("c", "config", true, "Path of the properties file.");
+        configOption.setRequired(true);
+        options.addOption(configOption);
+        Option znodeOption = new Option("n", "znode", true, "Znode path.");
+        znodeOption.setRequired(true);
+        options.addOption(znodeOption);
+        Option recursiveOption = new Option("r", "recursive", false, "Executes the command recursively through the znode tree.");
+        recursiveOption.setRequired(false);
+        options.addOption(recursiveOption);
+        Option verboseOption = new Option("v", "verbose", false, "Lists znodes during a set operation.");
+        verboseOption.setRequired(false);
+        options.addOption(verboseOption);
+
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmd = null;
+
+        try {
+            cmd = parser.parse(options, args);
+        } catch (ParseException e) {
+            System.out.println(e.getMessage());
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.setSyntaxPrefix("Usage: ");
+            String header = "Sets or retrieves ACLs for ZNodes in ZooKeeper.\n\n";
+            formatter.printHelp(String.format("%s [OPTIONS] [<acl> ...]", ZkAcl.class.getName()), header, options, null, false);
+
             System.exit(1);
         }
-        String propsFile = args[0];
-        String hostPort = args[1];
-        String znode = args[2];
-        List<ACL> acls = parseAcls(Arrays.copyOfRange(args, FIRST_ACL_POS, args.length));
+
+        String propsFile = cmd.getOptionValue("config");
+        String hostPort = cmd.getOptionValue("zookeeper");
+        String znode = cmd.getOptionValue("znode");
+        boolean recursive = cmd.hasOption("recursive");
+        boolean verbose = cmd.hasOption("verbose");
+
+        args = cmd.getArgs();
+        List<ACL> acls = parseAcls(args);
 
         Properties props = loadProperties(propsFile);
-        processAcls(hostPort, znode, props.getProperty(ADDAUTH_DIGEST_CONFIG, null), acls);
+        processAcls(hostPort, props.getProperty(ADDAUTH_DIGEST_CONFIG, null), znode, acls, recursive, verbose);
     }
 
     private static Properties loadProperties(String propsFile) throws IOException {
@@ -46,7 +78,7 @@ public class ZkAcl implements Watcher {
         }
     }
 
-    private static void processAcls(String hostPort, String znode, String addAuthDigest, List<ACL> acls)
+    private static void processAcls(String hostPort, String addAuthDigest, String znode, List<ACL> acls, boolean recursive, boolean verbose)
             throws KeeperException, InterruptedException, IOException {
         ZooKeeper zk = null;
         try {
@@ -57,22 +89,40 @@ public class ZkAcl implements Watcher {
                 zk.addAuthInfo("digest", addAuthDigest.getBytes());
             }
 
-            if (zk.exists(znode, watcher) == null) {
-                System.out.println("ZNode doesn't exist");
+            if (acls.size() > 0) {
+                System.out.println("Setting ACLs...");
             } else {
-                if (acls.size() > 0) {
-                    System.out.println("Setting ACLs:");
-                    zk.setACL(znode, acls, -1);
-                } else {
-                    System.out.println("Retrieving ACLs:");
-                    acls = zk.getACL(znode, null);
-                }
-                printACLs(acls);
+                System.out.println("Retrieving ACLs...");
             }
+            processZnode(zk, znode, acls, recursive, verbose);
         } finally {
             if (zk != null)
                 zk.close();
         }
+    }
+
+    private static void processZnode(ZooKeeper zk, String znode, List<ACL> acls, boolean recursive, boolean verbose)
+            throws KeeperException, InterruptedException, IOException {
+        if (zk.exists(znode, false) == null) {
+            System.out.printf("ZNode %s doesn't exist", znode);
+        } else {
+            if (acls.size() > 0) {
+                zk.setACL(znode, acls, -1);
+                if (verbose)
+                    printACLs(znode, acls);
+            } else {
+                List<ACL> getAcls = zk.getACL(znode, null);
+                printACLs(znode, getAcls);
+            }
+        }
+        if (recursive) {
+            List<String> children = zk.getChildren(znode, false);
+            for (String child : children) {
+                String childPath = znode + "/" + child;
+                processZnode(zk, childPath, acls, recursive, verbose);
+            }
+        }
+
     }
 
     public static List<ACL> parseAcls(String[] args) {
@@ -90,7 +140,8 @@ public class ZkAcl implements Watcher {
         return acls;
     }
 
-    public static void printACLs(List<ACL> acls) {
+    public static void printACLs(String znode, List<ACL> acls) {
+        System.out.printf("%s\n", znode);
         for (ACL a : acls) {
             printACL(a);
         }
@@ -98,7 +149,7 @@ public class ZkAcl implements Watcher {
 
     public static void printACL(ACL acl) {
         String perms = permsToString(acl.getPerms());
-        System.out.printf("Scheme: %s, Id: %s, Perms: %s\n", acl.getId().getScheme(), acl.getId().getId(), perms);
+        System.out.printf("  Scheme: %s, Id: %s, Perms: %s\n", acl.getId().getScheme(), acl.getId().getId(), perms);
     }
 
     public static String permsToString(int perms) {
